@@ -24,6 +24,7 @@ import BookForm from "@/components/BookForm";
 import AmazonUrlInput from "@/components/AmazonUrlInput";
 import TsundokuPop from "@/components/TsundokuPop";
 import NearbyBookstoreMap from "@/components/NearbyBookstoreMap";
+import DataManager from "@/components/DataManager";
 
 type TabValue = ReadingStatus | "all";
 type SortKey =
@@ -438,6 +439,8 @@ export default function Home() {
         </div>
 
         <NearbyBookstoreMap />
+
+        <DataManager />
       </main>
 
       {showForm && (
