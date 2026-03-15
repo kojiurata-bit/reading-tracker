@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { Book, ReadingStatus } from "@/types/book";
 import { getBooks, addBook, updateBook, deleteBook } from "@/lib/storage";
 import {
@@ -350,12 +351,20 @@ export default function Home() {
           <h1 className="text-lg font-semibold text-zinc-900 tracking-tight">
             読書トラッカーβ
           </h1>
-          <button
-            onClick={() => setShowForm(true)}
-            className="bg-zinc-900 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors"
-          >
-            + 追加
-          </button>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/journal"
+              className="text-zinc-500 hover:text-zinc-700 transition-colors text-sm font-medium px-2.5 py-1.5 rounded-lg hover:bg-zinc-100"
+            >
+              ジャーナル
+            </Link>
+            <button
+              onClick={() => setShowForm(true)}
+              className="bg-zinc-900 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors"
+            >
+              + 追加
+            </button>
+          </div>
         </div>
         <div className="max-w-2xl mx-auto px-4 pb-3">
           <AmazonUrlInput
