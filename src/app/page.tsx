@@ -88,6 +88,7 @@ export default function Home() {
   const [books, setBooks] = useState<Book[]>([]);
   const [activeTab, setActiveTab] = useState<TabValue>("all");
   const [sortKey, setSortKey] = useState<SortKey>("reg_desc");
+  const [searchQuery, setSearchQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingBook, setEditingBook] = useState<Book | undefined>();
   const [prefillData, setPrefillData] = useState<Partial<Book> | undefined>();
@@ -270,6 +271,14 @@ export default function Home() {
         const bookGenre = b.genre || "その他";
         if (bookGenre !== selectedGenre) return false;
       }
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        if (
+          !b.title.toLowerCase().includes(q) &&
+          !b.author.toLowerCase().includes(q)
+        )
+          return false;
+      }
       return true;
     }),
     sortKey
@@ -406,6 +415,39 @@ export default function Home() {
             <option value="pages_asc">ページ数 少→多</option>
             <option value="pages_desc">ページ数 多→少</option>
           </select>
+        </div>
+
+        <div className="relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="タイトル・著者で検索..."
+            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 pl-9 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-400/40 focus:border-transparent placeholder:text-zinc-300"
+          />
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-300"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-300 hover:text-zinc-500 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
 
         <div className="space-y-2">
