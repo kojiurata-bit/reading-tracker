@@ -52,3 +52,10 @@ def test_markers_use_marker_text():
 def test_from_subtitles():
     jobs, _ = build_plan_from_subtitles([("A", 10, 20), ("", 40, 5), ("B", 50, 0)])
     assert [(j.text, j.start, j.duration) for j in jobs] == [("A", 10, 20), ("B", 50, 1)]
+
+
+def test_markers_use_marker_text_until_next_skips_default_names():
+    markers = [MarkerInfo(frame=0, name="Marker 1"), MarkerInfo(frame=100, name="A"),
+               MarkerInfo(frame=200, name="B"), MarkerInfo(frame=300, name="C")]
+    jobs, _ = build_plan_markers([], markers, 30, 0, 2.0, until_next_marker=True, use_marker_text=True)
+    assert [(j.text, j.start, j.duration) for j in jobs] == [("A", 100, 100), ("B", 200, 100), ("C", 300, 60)]

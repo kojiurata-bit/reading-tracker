@@ -139,6 +139,28 @@ def run_sfx_at_markers(bridge: ResolveBridge, path: str, audio_track: int, auto_
     return result
 
 
+SCRIPT_ENCODINGS = ("utf-8-sig", "cp932")
+
+
+def read_script_text(path: str) -> str:
+    """原稿ファイルを読む. UTF-16 (BOM) → UTF-8 (BOM 可) → Shift_JIS (CP932) の順で試す.
+
+    I/O エラーは OSError、文字コードを判別できない場合も OSError を送出する.
+    """
+    with open(path, "rb") as f:
+        raw = f.read()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            return raw.decode("utf-16")
+        except UnicodeDecodeError:
+            pass
+    for enc in SCRIPT_ENCODINGS:
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    raise OSError("文字コードを判別できません (UTF-8 / Shift_JIS で保存してください): %s" % path)
+
+
 def load_script_file(path: str) -> List[TelopLine]:
-    with open(path, "r", encoding="utf-8-sig") as f:
-        return parse_auto(f.read(), path)
+    return parse_auto(read_script_text(path), path)

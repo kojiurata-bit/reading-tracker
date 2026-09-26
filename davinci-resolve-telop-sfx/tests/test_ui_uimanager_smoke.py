@@ -101,7 +101,8 @@ class FakeWindow:
         self.attrs = attrs
         self.layout = layout
         self.On = _On()
-        self.Geometry = attrs.get("Geometry")
+        g = attrs.get("Geometry") or [0, 0, 0, 0]
+        self.Geometry = {1: g[0], 2: g[1], 3: g[2], 4: g[3]}  # real Resolve returns a 1-based dict
         self.shown = False
 
     def _collect(self, el, out):
@@ -139,11 +140,13 @@ class FakeDispatcher:
 class FakeFusion:
     UIManager = FakeUI()
 
-    def RequestDir(self):
-        return None
+    def RequestDir(self, *a, **k):
+        self.dir_calls = getattr(self, "dir_calls", 0) + 1
+        return None  # cancelled
 
-    def RequestFile(self):
-        return None
+    def RequestFile(self, *a, **k):
+        self.file_calls = getattr(self, "file_calls", 0) + 1
+        return None  # cancelled
 
 
 class FakeBmd:
@@ -204,6 +207,7 @@ def test_panel_insert_and_sfx_flow(panel):
     assert any(i.start == panel.fake.timeline.start_frame + 10 for i in all_audio)
     panel._on_close(None)
     assert panel.session.cfg["last_text"] == "こんにちは\n世界\t1"
+    assert panel.session.cfg["ui_geometry"] == [200, 120, 760, 720]  # 1 始まり dict から変換される
     assert panel.session.cfg["quick_sfx"].endswith("pikon.wav")
     log = "\n".join(itm["Log"]._appended)
     assert "完了" in log and "エラー" not in log.replace("エラー 0 件", "")
@@ -212,3 +216,54 @@ def test_panel_insert_and_sfx_flow(panel):
 def test_panel_run(panel):
     panel.run()
     assert panel.disp.loops == 1
+
+
+def test_request_path_cancel_does_not_fall_back(panel, monkeypatch):
+    import sys
+    import types
+
+    def boom(*a, **k):
+        raise AssertionError("tkinter dialog must not be opened")
+
+    fake_tk = types.ModuleType("tkinter")
+    fake_tk.Tk = boom
+    monkeypatch.setitem(sys.modules, "tkinter", fake_tk)
+    assert panel._request_path(directory=False) is None
+    assert panel._request_path(directory=True) is None
+    assert panel.fusion.file_calls == 1 and panel.fusion.dir_calls == 1
+    panel._on_load(None)  # キャンセル -> 何もしない
+    assert "ダイアログを開けません" not in "\n".join(panel.itm["Log"]._appended)
+
+
+def test_load_reads_cp932_file(panel, tmp_path):
+    path = tmp_path / "script.txt"
+    path.write_bytes("こんにちは\n世界\n".encode("cp932"))
+    panel.fusion.RequestFile = lambda *a, **k: str(path)
+    panel._on_load(None)
+    assert panel.itm["Script"].PlainText == "こんにちは\n世界\n"
+
+
+def test_guarded_handler_logs_exception(panel):
+    handlers = panel.win.On.targets
+    panel._request_path = lambda directory=False: (_ for _ in ()).throw(RuntimeError("boom"))
+    handlers["BtnLoad"].handlers["Clicked"](None)  # 例外はログに流れて落ちない
+    assert any("RuntimeError: boom" in m for m in panel.itm["Log"]._appended)
+
+
+def test_tab_switch_keeps_marker_color_selection(panel):
+    itm = panel.itm
+    itm["MarkerColor"].CurrentIndex = 1  # "Blue"
+    panel._on_tab({"Index": 1})
+    panel._on_tab({"Index": 0})
+    assert itm["MarkerColor"].CurrentText == "Blue"
+    assert itm["Stack"].CurrentIndex == 0
+
+
+def test_sfx_markers_uses_auto_free_checkbox(panel):
+    itm = panel.itm
+    itm["AutoFree"].Checked = False
+    panel._on_sfx_markers(None)
+    assert panel.session.cfg["auto_free_track"] is False
+    itm["AutoFree"].Checked = True
+    panel._on_sfx_markers(None)
+    assert panel.session.cfg["auto_free_track"] is True

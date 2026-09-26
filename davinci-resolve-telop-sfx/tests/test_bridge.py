@@ -172,3 +172,17 @@ def test_errors_when_no_timeline():
     fake.project.timeline = None
     with pytest.raises(ResolveError):
         ResolveBridge(fake)
+
+
+def test_short_template_does_not_lock_in_end_exclusive():
+    fake = FakeResolve(end_exclusive=False)
+    tpl = fake.add_template(frames=120)
+    bridge = ResolveBridge(fake)
+    bridge.ensure_track("video", 2)
+    start = bridge.timeline_start
+    first = bridge._append(tpl, 121, start, 2, 1)  # テンプレより 1 フレーム長い要求 -> 切り詰め
+    assert first.GetDuration() == 120
+    assert bridge._end_exclusive is False
+    second = bridge._append(tpl, 100, start + 200, 2, 1)
+    assert second.GetDuration() == 100
+    assert bridge._end_exclusive is False

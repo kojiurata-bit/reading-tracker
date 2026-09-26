@@ -1,6 +1,7 @@
 """DaVinci Resolve Studio 用パネル (Fusion UIManager)."""
 
 
+from .engine import read_script_text
 from .presets import write_example_user_presets
 from .resolve_bridge import ResolveError
 from .ui_common import HELP_TEXT, SOURCE_MODES, Session
@@ -151,18 +152,23 @@ class UIManagerPanel:
         self._pending_log = []
         self.log("準備完了: " + self.session.bridge.timeline_name())
 
-    def _fill_marker_colors(self):
+    def _fill_marker_colors(self, ids=("MarkerColor", "SfxMarkerColor")):
+        """マーカー色コンボを作り直す. 現在の選択を優先し、無ければ保存値."""
         colors = self.session.marker_colors()
-        for cid in ("MarkerColor", "SfxMarkerColor"):
+        for cid in ids:
             combo = self.itm[cid]
+            try:
+                keep = combo.CurrentText or ""
+            except Exception:  # noqa: BLE001
+                keep = ""
+            if keep not in colors:
+                keep = self.session.cfg.get("marker_color", "すべて")
             try:
                 combo.Clear()
             except Exception:  # noqa: BLE001
                 pass
             combo.AddItems(colors)
-            saved = self.session.cfg.get("marker_color", "すべて")
-            if saved in colors:
-                combo.CurrentIndex = colors.index(saved)
+            combo.CurrentIndex = colors.index(keep) if keep in colors else 0
 
     def _fill_telop_sfx(self):
         combo = self.itm["TelopSfx"]
@@ -208,32 +214,47 @@ class UIManagerPanel:
         return None
 
     # ---------------------------------------------------------------- events
+    def _guard(self, fn):
+        """イベントハンドラ内の Python 例外をパネルのログへ流す (黙ってクリックが死なないように)."""
+        def wrapped(ev=None):
+            try:
+                return fn(ev)
+            except Exception as exc:  # noqa: BLE001
+                self.log("エラー: %s: %s" % (type(exc).__name__, exc))
+        return wrapped
+
     def _bind(self):
         on = self.win.On
+        g = self._guard
         getattr(on, WIN_ID).Close = self._on_close
-        on.Tabs.CurrentChanged = self._on_tab
-        on.BtnLoad.Clicked = self._on_load
-        on.BtnHelp.Clicked = lambda ev: self.log(HELP_TEXT)
-        on.BtnPresetFile.Clicked = self._on_preset_file
-        on.BtnPreview.Clicked = lambda ev: self._run(preview=True)
-        on.BtnInsert.Clicked = lambda ev: self._run(preview=False)
-        on.BtnFolder.Clicked = self._on_folder
-        on.BtnRescan.Clicked = self._on_rescan
-        on.SfxQuery.TextChanged = lambda ev: self._fill_sfx_list()
-        on.FavOnly.Clicked = lambda ev: self._fill_sfx_list()
-        on.SfxList.ItemDoubleClicked = lambda ev: self._on_sfx_playhead()
-        on.BtnSfxPlayhead.Clicked = lambda ev: self._on_sfx_playhead()
-        on.BtnFav.Clicked = self._on_fav
-        on.BtnSfxMarkers.Clicked = self._on_sfx_markers
+        on.Tabs.CurrentChanged = g(self._on_tab)
+        on.BtnLoad.Clicked = g(self._on_load)
+        on.BtnHelp.Clicked = g(lambda ev: self.log(HELP_TEXT))
+        on.BtnPresetFile.Clicked = g(self._on_preset_file)
+        on.BtnPreview.Clicked = g(lambda ev: self._run(preview=True))
+        on.BtnInsert.Clicked = g(lambda ev: self._run(preview=False))
+        on.BtnFolder.Clicked = g(self._on_folder)
+        on.BtnRescan.Clicked = g(self._on_rescan)
+        on.SfxQuery.TextChanged = g(lambda ev: self._fill_sfx_list())
+        on.FavOnly.Clicked = g(lambda ev: self._fill_sfx_list())
+        on.SfxList.ItemDoubleClicked = g(lambda ev: self._on_sfx_playhead())
+        on.BtnSfxPlayhead.Clicked = g(lambda ev: self._on_sfx_playhead())
+        on.BtnFav.Clicked = g(self._on_fav)
+        on.BtnSfxMarkers.Clicked = g(self._on_sfx_markers)
 
     def _on_tab(self, ev):
-        self.itm["Stack"].CurrentIndex = ev["Index"]
-        if ev["Index"] == 1:
-            self._fill_marker_colors()
+        idx = ev["Index"]
+        self.itm["Stack"].CurrentIndex = idx
+        # 表示するタブのコンボだけ更新 (もう一方の選択を消さない)
+        self._fill_marker_colors(("SfxMarkerColor",) if idx == 1 else ("MarkerColor",))
 
     def _on_close(self, ev):
-        self._save_form()
-        self.disp.ExitLoop()
+        try:
+            self._save_form()
+        except Exception as exc:  # noqa: BLE001
+            print("TelopSFX: 設定保存に失敗: %r" % (exc,))
+        finally:
+            self.disp.ExitLoop()
 
     def _save_form(self):
         itm = self.itm
@@ -255,41 +276,45 @@ class UIManagerPanel:
         cfg["sfx_folder"] = itm["SfxFolder"].Text or ""
         try:
             geo = self.win.Geometry
-            cfg["ui_geometry"] = [int(geo[0]), int(geo[1]), int(geo[2]), int(geo[3])]
+            if isinstance(geo, dict):
+                # Fusion/Resolve は Lua テーブルを 1 始まりの dict ({1: x, 2: y, 3: w, 4: h}) で渡す. キーは int/float/str
+                geo = [geo[k] for k in sorted(geo, key=lambda k: int(float(k)))]
+            geo = [int(float(v)) for v in list(geo)[:4]]
+            if len(geo) == 4 and geo[2] > 0 and geo[3] > 0:
+                cfg["ui_geometry"] = geo
         except Exception:  # noqa: BLE001
             pass
         self.session.save()
 
     def _request_path(self, directory=False):
+        """Fusion ネイティブのファイル/フォルダ選択. キャンセル時は None (tkinter へはフォールバックしない)."""
+        fn = getattr(self.fusion, "RequestDir" if directory else "RequestFile", None)
+        if fn is None:
+            self.log("ファイル選択ダイアログを開けません。パスを直接入力してください")
+            return None
         try:
-            result = self.fusion.RequestDir() if directory else self.fusion.RequestFile()
-            if result:
-                return str(result)
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            import tkinter
-            from tkinter import filedialog
-            root = tkinter.Tk()
-            root.withdraw()
-            path = filedialog.askdirectory() if directory else filedialog.askopenfilename(
-                filetypes=[("原稿", "*.txt *.srt *.vtt *.csv"), ("すべて", "*.*")]
-            )
-            root.destroy()
-            return path or None
+            if directory:
+                start = self.session.cfg.get("sfx_folder", "") or ""
+                result = fn(start, {"FReqS_Title": "効果音フォルダを選択"})
+            else:
+                result = fn("", "", {
+                    "FReqS_Title": "原稿ファイルを選択",
+                    "FReqS_Filter": "Text/SRT (*.txt *.srt *.vtt)|*.txt;*.srt;*.vtt|All (*.*)|*.*",
+                })
         except Exception:  # noqa: BLE001
             self.log("ファイル選択ダイアログを開けません。パスを直接入力してください")
             return None
+        # Fusion は Cancel で None/'' を返す -> そのまま None (第二のダイアログは出さない)
+        return str(result) if result else None
 
     def _on_load(self, ev):
         path = self._request_path(directory=False)
         if not path:
             return
         try:
-            with open(path, "r", encoding="utf-8-sig") as f:
-                self.itm["Script"].PlainText = f.read()
+            self.itm["Script"].PlainText = read_script_text(path)
             self.log("読み込み: " + path)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             self.log("読み込み失敗: %s" % exc)
 
     def _on_preset_file(self, ev):
@@ -334,6 +359,7 @@ class UIManagerPanel:
             self.log("効果音を選択してください")
             return
         self.session.cfg["audio_track"] = int(self.itm["AudioTrack2"].Value)
+        self.session.cfg["auto_free_track"] = bool(self.itm["AutoFree"].Checked)
         try:
             self.session.insert_sfx_at_markers(s.path, self.itm["SfxMarkerColor"].CurrentText)
         except Exception as exc:  # noqa: BLE001

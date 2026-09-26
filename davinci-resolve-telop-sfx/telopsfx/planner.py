@@ -93,25 +93,26 @@ def build_plan_markers(
     )
     default_frames = max(1, seconds_to_frames(default_duration_sec, fps))
     jobs = []
+    # source の各要素は (selected 内の位置, マーカー, 行). 位置は「次のマーカー」検索に使う
     if use_marker_text:
         source = []
-        for i, m in enumerate(selected, 1):
+        for pos, m in enumerate(selected):
             text = (m.note or m.name or "").strip()
             if text and not _DEFAULT_MARKER_NAME.match(text):
-                source.append((m, TelopLine(text=text, line_no=i)))
+                source.append((pos, m, TelopLine(text=text, line_no=pos + 1)))
     else:
-        source = list(zip(selected, lines))
+        source = [(pos, m, line) for pos, (m, line) in enumerate(zip(selected, lines))]
         if len(lines) > len(selected):
             warnings.append(
                 "原稿 %d 行に対してマーカーが %d 個しかありません (%d 行は未配置)"
                 % (len(lines), len(selected), len(lines) - len(selected))
             )
-    for idx, (m, line) in enumerate(source):
+    for pos, m, line in source:
         start = timeline_start + m.frame
         if line.duration_sec is not None:
             duration = seconds_to_frames(line.duration_sec, fps)
-        elif until_next_marker and idx + 1 < len(selected):
-            duration = selected[idx + 1].frame - m.frame
+        elif until_next_marker and pos + 1 < len(selected):
+            duration = selected[pos + 1].frame - m.frame
         elif m.duration and m.duration > 1:
             duration = m.duration
         else:

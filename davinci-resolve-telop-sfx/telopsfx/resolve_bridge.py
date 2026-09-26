@@ -255,6 +255,11 @@ class ResolveBridge:
     # ------------------------------------------------------------------ append
     def _append(self, clip, duration: int, record: int, track: int, media_type: int):
         """AppendToTimeline を、recordFrame / endFrame の解釈差を自動補正しながら実行する."""
+        src_len = self.clip_frames(clip)
+        requested = int(duration)
+        duration = requested
+        if src_len is not None and 0 < src_len < requested:
+            duration = src_len  # 切り詰めが自動判定に混ざらないよう、要求尺を先に丸める
         record_base = self._record_base or 0
         end_exclusive = bool(self._end_exclusive)
         for attempt in range(3):
@@ -285,7 +290,8 @@ class ResolveBridge:
                     self._record_base = 0
                     self.log("注意: %s に置けず %s に配置されました (既存クリップと重なっている可能性)"
                              % (self.frame_tc(record), self.frame_tc(actual_start)))
-            if actual_dur == duration - 1 and self._end_exclusive is None and not end_exclusive:
+            if (actual_dur == duration - 1 and self._end_exclusive is None and not end_exclusive
+                    and (src_len is None or src_len >= duration)):
                 self._end_exclusive = True
                 end_exclusive = True
                 fix = True
@@ -296,7 +302,7 @@ class ResolveBridge:
             if fix and attempt < 2:
                 self.timeline.DeleteClips([item])
                 continue
-            if actual_dur < duration:
+            if actual_dur < requested:
                 self.log("注意: %s の長さが %d フレームに切り詰められました (テンプレートの尺が不足)" % (self.frame_tc(record), actual_dur))
             return item
         raise ResolveError("AppendToTimeline の補正に失敗しました")

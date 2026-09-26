@@ -1,19 +1,23 @@
 """テロップ原稿 (テキスト / SRT) のパーサ."""
 
+import math
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import List, Optional
 
 from .timecode import hms_to_seconds
 
 _TAG_RE = re.compile(r"<[^>]+>")
+# SRT / WebVTT のタイミング行. VTT は時間部 (hh:) を省略できる ("00:01.000 --> 00:02.000")
 _SRT_TIME_RE = re.compile(
-    r"(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})"
+    r"((?:\d{1,2}:)?\d{2}:\d{2}[,.]\d{1,3})\s*-->\s*((?:\d{1,2}:)?\d{2}:\d{2}[,.]\d{1,3})"
 )
-# 行頭のタイムスタンプ: "[00:12] text", "00:12 text", "00:12-00:15 text", "1:02:03.5 text"
+# 行頭のタイムスタンプ: "[00:12] text", "[00:12]text", "00:12 text", "00:12-00:15 text", "1:02:03.5 text"
 _LINE_TIME_RE = re.compile(
     r"^\[?\s*(\d{1,2}(?::\d{2}){1,2}(?:[.,]\d{1,3})?)"
-    r"(?:\s*[-~〜]\s*(\d{1,2}(?::\d{2}){1,2}(?:[.,]\d{1,3})?))?\s*\]?[\s:：]+"
+    r"(?:\s*[-~〜]\s*(\d{1,2}(?::\d{2}){1,2}(?:[.,]\d{1,3})?))?"
+    r"(?:\s*\]\s*|[\s:：]+)"
 )
 _SFX_TAG_RE = re.compile(r"\s@([^\s@]+)\s*$")
 
@@ -32,6 +36,14 @@ class TelopLine:
 
 def strip_tags(text):
     return _TAG_RE.sub("", text)
+
+
+def _is_cue_start(lines, i, n):
+    """次のキューの先頭か: タイミング行、または数字のみの番号行の直後にタイミング行がある."""
+    s = lines[i].strip()
+    if _SRT_TIME_RE.search(s):
+        return True
+    return s.isdigit() and i + 1 < n and _SRT_TIME_RE.search(lines[i + 1]) is not None
 
 
 def parse_srt(content: str) -> List[TelopLine]:
@@ -57,7 +69,7 @@ def parse_srt(content: str) -> List[TelopLine]:
         end = hms_to_seconds(m.group(2))
         i += 1
         text_lines = []
-        while i < n and lines[i].strip():
+        while i < n and lines[i].strip() and not _is_cue_start(lines, i, n):
             text_lines.append(strip_tags(lines[i].rstrip()))
             i += 1
         text = "\n".join(text_lines).strip()
@@ -102,10 +114,13 @@ def parse_lines(content: str) -> List[TelopLine]:
         if "\t" in tl.text:
             body, _, dur = tl.text.rpartition("\t")
             try:
-                tl.duration_sec = float(dur.strip())
-                tl.text = body.strip()
+                # NFKC で全角数字/全角ピリオド ("２．５") も受け付ける
+                val = float(unicodedata.normalize("NFKC", dur).strip())
             except ValueError:
-                pass
+                val = None
+            if val is not None and math.isfinite(val):  # nan / inf は planner を壊すので無視
+                tl.duration_sec = val
+                tl.text = body.strip()
         _extract_sfx_tag(tl)
         tl.text = tl.text.replace("\\n", "\n")
         if tl.text:

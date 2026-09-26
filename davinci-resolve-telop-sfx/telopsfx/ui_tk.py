@@ -3,6 +3,7 @@
 import tkinter as tk
 from tkinter import filedialog, ttk
 
+from .engine import read_script_text
 from .presets import write_example_user_presets
 from .resolve_bridge import ResolveError
 from .ui_common import HELP_TEXT, SOURCE_MODES, Session
@@ -10,21 +11,40 @@ from .ui_common import HELP_TEXT, SOURCE_MODES, Session
 
 class TkPanel:
     def __init__(self, resolve):
-        self.root = tk.Tk()
-        self.root.title("TelopSFX  テロップ / 効果音")
         self._log_widget = None
         self._pending = []
-        self.session = Session(resolve, self.log)
-        cfg = self.session.cfg
-        geo = cfg.get("ui_geometry") or [200, 120, 760, 720]
-        self.root.geometry("%dx%d+%d+%d" % (geo[2], geo[3], geo[0], geo[1]))
-        self._sfx_rows = []
-        self._telop_sfx_paths = []
-        self._build()
-        for m in self._pending:
-            self.log(m)
-        self.log("準備完了: " + self.session.bridge.timeline_name())
-        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        # Resolve 側の検証を先に行う (失敗しても空ウィンドウを残さない)
+        self.session = Session(resolve, self.log)  # ResolveError はここで送出され, まだ root は無い
+        self.root = tk.Tk()
+        try:
+            self.root.report_callback_exception = self._on_callback_error
+            self.root.title("TelopSFX  テロップ / 効果音")
+            cfg = self.session.cfg
+            geo = cfg.get("ui_geometry") or [200, 120, 760, 720]
+            self.root.geometry("%dx%d+%d+%d" % (geo[2], geo[3], geo[0], geo[1]))
+            self._sfx_rows = []
+            self._telop_sfx_paths = []
+            self._build()
+            for m in self._pending:
+                self.log(m)
+            self.log("準備完了: " + self.session.bridge.timeline_name())
+            self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        except Exception:
+            try:
+                self.root.destroy()
+            except Exception:  # noqa: BLE001
+                pass
+            raise
+
+    def _on_callback_error(self, etype, value, tb):
+        """Tk コールバック内の例外. Resolve にはコンソールが無いのでパネルのログにも出す."""
+        import traceback
+        text = "".join(traceback.format_exception(etype, value, tb))
+        print(text)  # Resolve の Workspace > Console 用
+        try:
+            self.log("エラー: %s: %s" % (etype.__name__, value))
+        except Exception:  # noqa: BLE001
+            pass
 
     def log(self, msg):
         if self._log_widget is None:
@@ -156,21 +176,35 @@ class TkPanel:
 
     def _fill_marker_colors(self):
         colors = self.session.marker_colors()
+        cfg_color = self.session.cfg.get("marker_color", "すべて")
         for combo in (self.marker_color, self.sfx_marker_color):
             current = combo.get()
             combo["values"] = colors
-            combo.set(current if current in colors else self.session.cfg.get("marker_color", "すべて") if self.session.cfg.get("marker_color") in colors else colors[0])
+            if current in colors:
+                value = current
+            elif cfg_color in colors:
+                value = cfg_color
+            else:
+                value = colors[0]
+            combo.set(value)
 
     def _fill_telop_sfx(self):
+        # 現在の選択を優先し、無ければ保存値 (初回表示時など) にフォールバック
+        idx = self.telop_sfx.current()
+        if 0 <= idx < len(self._telop_sfx_paths):
+            keep = self._telop_sfx_paths[idx]
+        else:
+            keep = self.session.cfg.get("telop_sfx", "")
         favs = [s for s in self.session.sfx_items if s.favorite]
         items = favs or self.session.sfx_items
         self._telop_sfx_paths = [s.path for s in items]
         self.telop_sfx["values"] = [("★ " if s.favorite else "") + s.rel for s in items]
-        saved = self.session.cfg.get("telop_sfx", "")
-        if saved in self._telop_sfx_paths:
-            self.telop_sfx.current(self._telop_sfx_paths.index(saved))
+        if keep in self._telop_sfx_paths:
+            self.telop_sfx.current(self._telop_sfx_paths.index(keep))
         elif items:
             self.telop_sfx.current(0)
+        else:
+            self.telop_sfx.set("")
 
     def _fill_sfx_list(self):
         for iid in self.sfx_list.get_children():
@@ -187,19 +221,31 @@ class TkPanel:
         return self._sfx_rows[idx] if 0 <= idx < len(self._sfx_rows) else None
 
     # --------------------------------------------------------------- actions
+    def _num(self, var, default, cast=float, label=""):
+        """Spinbox は自由入力なので空欄/非数値だと Var.get() が TclError を投げる. 既定値で救済."""
+        try:
+            return cast(var.get())
+        except (tk.TclError, ValueError, TypeError):
+            self.log("%s の値が不正なので %s を使います" % (label or "数値", default))
+            try:
+                var.set(default)
+            except tk.TclError:
+                pass
+            return default
+
     def _save_form(self):
         cfg = self.session.cfg
         cfg["last_text"] = self.script.get("1.0", "end").rstrip("\n")
         cfg["last_source_mode"] = self.mode.current()
-        cfg["default_duration_sec"] = float(self.duration.get())
-        cfg["gap_sec"] = float(self.gap.get())
-        cfg["video_track"] = int(self.video_track.get())
-        cfg["audio_track"] = int(self.audio_track.get())
+        cfg["default_duration_sec"] = self._num(self.duration, float(cfg.get("default_duration_sec", 3.0)), float, "表示秒")
+        cfg["gap_sec"] = self._num(self.gap, float(cfg.get("gap_sec", 0.0)), float, "間隔秒")
+        cfg["video_track"] = self._num(self.video_track, int(cfg.get("video_track", 2)), int, "V")
+        cfg["audio_track"] = self._num(self.audio_track, int(cfg.get("audio_track", 2)), int, "A")
         cfg["auto_free_track"] = bool(self.auto_free.get())
         cfg["preset"] = self.preset.get()
         cfg["template_name"] = self.template.get() or "Text+"
         cfg["marker_color"] = self.marker_color.get()
-        cfg["subtitle_track"] = int(self.sub_track.get())
+        cfg["subtitle_track"] = self._num(self.sub_track, int(cfg.get("subtitle_track", 1)), int, "字幕Tr")
         cfg["telop_sfx_enabled"] = bool(self.telop_sfx_on.get())
         idx = self.telop_sfx.current()
         cfg["telop_sfx"] = self._telop_sfx_paths[idx] if 0 <= idx < len(self._telop_sfx_paths) else ""
@@ -211,20 +257,25 @@ class TkPanel:
         self.session.save()
 
     def _on_close(self):
-        self._save_form()
-        self.root.destroy()
+        try:
+            self._save_form()
+        except Exception as exc:  # noqa: BLE001
+            print("TelopSFX: 設定保存に失敗: %r" % (exc,))
+        finally:
+            self.root.destroy()
 
     def _on_load(self):
-        path = filedialog.askopenfilename(filetypes=[("原稿", "*.txt *.srt *.vtt *.csv"), ("すべて", "*.*")])
+        path = filedialog.askopenfilename(filetypes=[("原稿", "*.txt *.srt *.vtt"), ("すべて", "*.*")])
         if not path:
             return
         try:
-            with open(path, "r", encoding="utf-8-sig") as f:
-                self.script.delete("1.0", "end")
-                self.script.insert("1.0", f.read())
-            self.log("読み込み: " + path)
-        except OSError as exc:
+            text = read_script_text(path)  # 読めてから消す (失敗時に原稿を失わない)
+        except (OSError, ValueError) as exc:
             self.log("読み込み失敗: %s" % exc)
+            return
+        self.script.delete("1.0", "end")
+        self.script.insert("1.0", text)
+        self.log("読み込み: " + path)
 
     def _on_preset_file(self):
         self.log("プリセットファイル: %s  (編集後にパネルを開き直すと反映)" % write_example_user_presets())
@@ -246,9 +297,9 @@ class TkPanel:
         if not s:
             self.log("効果音を選択してください")
             return
-        self.session.cfg["audio_track"] = int(self.audio_track.get())
-        self.session.cfg["auto_free_track"] = bool(self.auto_free.get())
         try:
+            self.session.cfg["audio_track"] = self._num(self.audio_track, int(self.session.cfg.get("audio_track", 2)), int, "A")
+            self.session.cfg["auto_free_track"] = bool(self.auto_free.get())
             self.session.insert_sfx_at_playhead(s.path)
         except Exception as exc:  # noqa: BLE001
             self.log("エラー: %s" % exc)
@@ -266,23 +317,24 @@ class TkPanel:
         if not s:
             self.log("効果音を選択してください")
             return
-        self.session.cfg["audio_track"] = int(self.audio_track.get())
         try:
+            self.session.cfg["audio_track"] = self._num(self.audio_track, int(self.session.cfg.get("audio_track", 2)), int, "A")
+            self.session.cfg["auto_free_track"] = bool(self.auto_free.get())
             self.session.insert_sfx_at_markers(s.path, self.sfx_marker_color.get())
         except Exception as exc:  # noqa: BLE001
             self.log("エラー: %s" % exc)
 
     def _run(self, preview):
-        self._save_form()
-        cfg = self.session.cfg
-        telop_sfx = cfg["telop_sfx"] if cfg.get("telop_sfx_enabled") else ""
-        opt = self.session.build_options(
-            cfg["last_source_mode"], cfg["default_duration_sec"], cfg["gap_sec"], cfg["preset"],
-            cfg["video_track"], cfg["audio_track"], cfg["auto_free_track"], cfg["marker_color"],
-            bool(self.until_next.get()), bool(self.marker_text.get()), cfg["subtitle_track"],
-            telop_sfx, cfg["template_name"],
-        )
         try:
+            self._save_form()
+            cfg = self.session.cfg
+            telop_sfx = cfg["telop_sfx"] if cfg.get("telop_sfx_enabled") else ""
+            opt = self.session.build_options(
+                cfg["last_source_mode"], cfg["default_duration_sec"], cfg["gap_sec"], cfg["preset"],
+                cfg["video_track"], cfg["audio_track"], cfg["auto_free_track"], cfg["marker_color"],
+                bool(self.until_next.get()), bool(self.marker_text.get()), cfg["subtitle_track"],
+                telop_sfx, cfg["template_name"],
+            )
             if preview:
                 jobs, warnings = self.session.preview(cfg["last_text"], opt)
                 for w in warnings:
@@ -296,6 +348,8 @@ class TkPanel:
                 self.session.insert_telops(cfg["last_text"], opt)
         except ResolveError as exc:
             self.log("エラー: %s" % exc)
+        except (tk.TclError, ValueError) as exc:
+            self.log("数値の入力が不正です: %s" % exc)
         except Exception as exc:  # noqa: BLE001
             self.log("予期しないエラー: %r" % (exc,))
 

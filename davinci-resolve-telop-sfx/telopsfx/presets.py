@@ -16,19 +16,25 @@ TEMPLATE_AS_IS = "テンプレートのまま"
 
 
 def default_japanese_font():
+    return default_japanese_font_styles()[0]
+
+
+def default_japanese_font_styles():
+    """(font, bold_style, regular_style). Style は Text+ がそのフォントに対して実際に列挙する名前でなければ効かない."""
     system = platform.system()
     if system == "Darwin":
-        return "Hiragino Sans"
+        # macOS の Hiragino Sans は W0..W9 のウェイト名しか持たない (Bold/Regular は存在しない)
+        return ("Hiragino Sans", "W6", "W3")
     if system == "Windows":
-        return "Yu Gothic UI"
-    return "Noto Sans CJK JP"
+        return ("Yu Gothic UI", "Bold", "Regular")
+    return ("Noto Sans CJK JP", "Bold", "Regular")
 
 
 def builtin_presets():
-    font = default_japanese_font()
+    font, bold, regular = default_japanese_font_styles()
     return {
         "標準 (白・黒フチ・下部)": {
-            "Font": font, "Style": "Bold", "Size": 0.075,
+            "Font": font, "Style": bold, "Size": 0.075,
             "Red1": 1.0, "Green1": 1.0, "Blue1": 1.0, "Alpha1": 1.0,
             "Enabled2": 1, "Red2": 0.0, "Green2": 0.0, "Blue2": 0.0, "Thickness2": 0.05,
             "Enabled4": 0,
@@ -36,7 +42,7 @@ def builtin_presets():
             "ClipColor": "Yellow",
         },
         "強調 (黄・黒フチ・下部)": {
-            "Font": font, "Style": "Bold", "Size": 0.085,
+            "Font": font, "Style": bold, "Size": 0.085,
             "Red1": 1.0, "Green1": 0.9, "Blue1": 0.1, "Alpha1": 1.0,
             "Enabled2": 1, "Red2": 0.05, "Green2": 0.05, "Blue2": 0.05, "Thickness2": 0.06,
             "Enabled4": 0,
@@ -44,7 +50,7 @@ def builtin_presets():
             "ClipColor": "Orange",
         },
         "帯付き (白文字・黒帯・下部)": {
-            "Font": font, "Style": "Bold", "Size": 0.07,
+            "Font": font, "Style": bold, "Size": 0.07,
             "Red1": 1.0, "Green1": 1.0, "Blue1": 1.0, "Alpha1": 1.0,
             "Enabled2": 0,
             "Enabled4": 1, "ElementShape4": 2,
@@ -54,14 +60,14 @@ def builtin_presets():
             "ClipColor": "Yellow",
         },
         "見出し (中央・大)": {
-            "Font": font, "Style": "Bold", "Size": 0.12,
+            "Font": font, "Style": bold, "Size": 0.12,
             "Red1": 1.0, "Green1": 1.0, "Blue1": 1.0, "Alpha1": 1.0,
             "Enabled2": 1, "Red2": 0.0, "Green2": 0.0, "Blue2": 0.0, "Thickness2": 0.05,
             "Center": [0.5, 0.5],
             "ClipColor": "Pink",
         },
         "左上キャプション (小)": {
-            "Font": font, "Style": "Regular", "Size": 0.045,
+            "Font": font, "Style": regular, "Size": 0.045,
             "Red1": 1.0, "Green1": 1.0, "Blue1": 1.0, "Alpha1": 1.0,
             "Enabled2": 1, "Red2": 0.0, "Green2": 0.0, "Blue2": 0.0, "Thickness2": 0.04,
             "Center": [0.2, 0.88],

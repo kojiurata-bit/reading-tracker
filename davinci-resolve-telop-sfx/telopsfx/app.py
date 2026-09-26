@@ -1,6 +1,7 @@
 """エントリポイント. Resolve のスクリプトメニューから呼ばれる."""
 
 import os
+import sys
 import traceback
 
 
@@ -57,6 +58,8 @@ def _report(message):
 
 
 def run_panel(globals_dict):
+    if sys.version_info < (3, 7):
+        raise RuntimeError("TelopSFX には Python 3.7 以上が必要です (現在: %d.%d)" % sys.version_info[:2])
     resolve, fusion, bmd = _resolve_objects(globals_dict)
     if resolve is None:
         _report("DaVinci Resolve に接続できません。Resolve の Workspace > Scripts メニューから実行してください。")

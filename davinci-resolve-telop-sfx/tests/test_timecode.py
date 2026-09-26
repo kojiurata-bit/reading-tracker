@@ -55,3 +55,11 @@ def test_hms():
 def test_seconds_to_frames():
     assert seconds_to_frames(2.5, 24) == 60
     assert seconds_to_frames(1, 29.97) == 30
+
+
+def test_drop_frame_flag_ignored_on_non_df_fps():
+    from telopsfx.timecode import timecode_base
+
+    for fps in (24, 25, 23.976, 50):
+        assert timecode_to_frame("00:10:00:00", fps, True) == 600 * timecode_base(fps)
+        assert timecode_to_frame(frame_to_timecode(15000, fps, True), fps, True) == 15000

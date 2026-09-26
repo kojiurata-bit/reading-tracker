@@ -45,7 +45,8 @@ def timecode_to_frame(tc, fps, drop_frame=None):
     hh, mm, ss, ff = (int(x) for x in m.groups())
     base = timecode_base(fps)
     if drop_frame is None:
-        drop_frame = ";" in tc and is_drop_frame_fps(fps)
+        drop_frame = ";" in tc
+    drop_frame = bool(drop_frame) and is_drop_frame_fps(fps)  # 非 DF レートでは DF 指定を無視 (frame_to_timecode と同じ)
     if not drop_frame:
         return ((hh * 60 + mm) * 60 + ss) * base + ff
     # ドロップフレーム: 毎分 (10分毎を除く) 先頭の 2 (or 4) フレームを飛ばす

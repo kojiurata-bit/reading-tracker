@@ -16,15 +16,18 @@ DaVinci Resolve の **Workspace › Scripts** メニューから呼び出すパ�
 | トラック自動回避 | 置き先が埋まっていたら上のトラックへ (無ければ自動追加) |
 | クイック挿入 | クリップボードの文字列を 1 枚だけ挿入 / 直前の効果音を再生ヘッドに挿入 |
 
-Studio 版では Resolve ネイティブのパネル (UIManager)、無償版では同じ機能の別ウィンドウ (tkinter) が開きます。
+Studio 版では Resolve ネイティブのパネル (UIManager)、無償版 (20.x まで) では同じ機能の別ウィンドウ (tkinter) が開きます。
 
 ## 動作要件
 
-- DaVinci Resolve 18.5 以降 (19 / 20 で想定)。Studio でなくても動きます
-- Python 3.6 以降 (Resolve が Python スクリプトを実行するために必要)
+- DaVinci Resolve 18.5 〜 20.x (19 / 20 で想定)。この範囲なら Studio でなくても動きます
+  - **無償版は 20.x まで**。Resolve 21.1 以降の無償版は Python スクリプトを読み込まなくなった (BMD が Python スクリプティングを Studio 限定に変更) ため、21.1 以降で使うには Studio 版が必要です
+- macOS: **Mac App Store 版 Resolve は非対応** (サンドボックスのためスクリプトが動きません)。blackmagicdesign.com からダウンロードした版を使ってください
+- Python 3.7 以降 (3.10〜3.12 を推奨。Resolve が Python スクリプトを実行するために必要)
   - macOS: <https://www.python.org/downloads/> の Python 3 をインストール
   - Windows: 同上。インストーラで「Add python.exe to PATH」にチェック
-- Resolve の設定: **DaVinci Resolve › 環境設定 › システム › 一般 › External scripting using** を `Local` に
+  - Rocky/RHEL 8 などの system python3 は 3.6 なので python.org 版 3.10+ を入れる
+- (任意・Studio のみ) ターミナル等 Resolve の外から API を叩く場合だけ **環境設定 › システム › 一般 › External scripting using** を `Local` に。Workspace › Scripts から使うだけなら不要です
 
 ## インストール
 
@@ -91,7 +94,7 @@ Resolve の API はタイトルを「指定した位置・尺」で置く手段�
 
 | キー | 意味 |
 | --- | --- |
-| `Font`, `Style`, `Size` | フォント名 / スタイル (Bold 等) / サイズ (0〜1、0.08 が標準) |
+| `Font`, `Style`, `Size` | フォント名 / スタイル / サイズ (0〜1、0.08 が標準)。`Style` は Text+ のスタイル欄にそのフォントが実際に出す名前 (Yu Gothic UI: `Bold`/`Regular`、Hiragino Sans: `W3`〜`W9` など) でないと無視されます |
 | `Red1` `Green1` `Blue1` `Alpha1` | 文字色 (0〜1) |
 | `Enabled2`, `Red2`.., `Thickness2` | アウトライン ON/OFF、色、太さ |
 | `Enabled4`, `ElementShape4`=2, `Red4`.., `Alpha4`, `ExtendHorizontal4`, `ExtendVertical4` | 背景ボックス |
@@ -117,7 +120,7 @@ Resolve の API はタイトルを「指定した位置・尺」で置く手段�
 
 | 症状 | 確認すること |
 | --- | --- |
-| Scripts メニューに出ない | Python 3 がインストールされているか。Resolve を再起動したか。`install.py` の出力先にファイルがあるか |
+| Scripts メニューに出ない | 無償版で Resolve 21.1 以降を使っていないか (21.1 以降の無償版は .py を読み込みません → 20.x に戻すか Studio 版を使う)。macOS で App Store 版 Resolve を使っていないか (非対応。BMD サイトのダウンロード版に入れ替える)。Python 3 (3.7 以上) がインストールされているか。Resolve を再起動したか。`install.py` の出力先にファイルがあるか |
 | 「telopsfx パッケージが見つかりません」 | `install.py` を実行し直す (`~/.telopsfx/lib/telopsfx` が出来ます) |
 | テロップの文字が変わらない | テンプレートが Text+ (Fusion タイトル) か。他のタイトルは非対応 |
 | 位置がずれる / 末尾に追加される | 置き先のトラックが埋まっていないか (「重なるなら上のトラックへ」を ON に) |
